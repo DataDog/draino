@@ -70,15 +70,17 @@ func main() {
 		leaderElectionTokenName     = app.Flag("leader-election-token-name", "Leader election token name.").Default(kubernetes.Component).String()
 
 		// Eviction filtering flags
-		skipDrain                 = app.Flag("skip-drain", "Whether to skip draining nodes after cordoning.").Default("false").Bool()
-		doNotEvictPodControlledBy = app.Flag("do-not-evict-pod-controlled-by", "Do not evict pods that are controlled by the designated kind, empty VALUE for uncontrolled pods, May be specified multiple times.").PlaceHolder("kind[[.version].group]] examples: StatefulSets StatefulSets.apps StatefulSets.apps.v1").Default("", kubernetes.KindStatefulSet, kubernetes.KindDaemonSet).Strings()
-		evictLocalStoragePods     = app.Flag("evict-emptydir-pods", "Evict pods with local storage, i.e. with emptyDir volumes.").Bool()
-		protectedPodAnnotations   = app.Flag("protected-pod-annotation", "Protect pods with this annotation from eviction. May be specified multiple times.").PlaceHolder("KEY[=VALUE]").Strings()
+		skipDrain                     = app.Flag("skip-drain", "Whether to skip draining nodes after cordoning.").Default("false").Bool()
+		doNotEvictPodControlledBy     = app.Flag("do-not-evict-pod-controlled-by", "Do not evict pods that are controlled by the designated kind, empty VALUE for uncontrolled pods, May be specified multiple times.").PlaceHolder("kind[[.version].group]] examples: StatefulSets StatefulSets.apps StatefulSets.apps.v1").Default("", kubernetes.KindStatefulSet, kubernetes.KindDaemonSet).Strings()
+		evictLocalStoragePods         = app.Flag("evict-emptydir-pods", "Evict pods with local storage, i.e. with emptyDir volumes.").Bool()
+		protectedPodAnnotations       = app.Flag("protected-pod-annotation", "Protect pods with this annotation from eviction. May be specified multiple times.").PlaceHolder("KEY[=VALUE]").Strings()
+		protectedPodUsingStorageClass = app.Flag("protected-pod-using-storage-class", "Protect pods with pvc using a given storage class. May be specified multiple times.").Strings()
 
 		// Cordon filtering flags
-		doNotCordonPodControlledBy    = app.Flag("do-not-cordon-pod-controlled-by", "Do not cordon nodes hosting pods that are controlled by the designated kind, empty VALUE for uncontrolled pods, May be specified multiple times.").PlaceHolder("kind[[.version].group]] examples: StatefulSets StatefulSets.apps StatefulSets.apps.v1").Default("", kubernetes.KindStatefulSet).Strings()
-		cordonLocalStoragePods        = app.Flag("cordon-emptydir-pods", "Evict pods with local storage, i.e. with emptyDir volumes.").Default("true").Bool()
-		cordonProtectedPodAnnotations = app.Flag("cordon-protected-pod-annotation", "Protect nodes hosting pods with this annotation from cordon. May be specified multiple times.").PlaceHolder("KEY[=VALUE]").Strings()
+		doNotCordonPodControlledBy          = app.Flag("do-not-cordon-pod-controlled-by", "Do not cordon nodes hosting pods that are controlled by the designated kind, empty VALUE for uncontrolled pods, May be specified multiple times.").PlaceHolder("kind[[.version].group]] examples: StatefulSets StatefulSets.apps StatefulSets.apps.v1").Default("", kubernetes.KindStatefulSet).Strings()
+		cordonLocalStoragePods              = app.Flag("cordon-emptydir-pods", "Evict pods with local storage, i.e. with emptyDir volumes.").Default("true").Bool()
+		cordonProtectedPodAnnotations       = app.Flag("cordon-protected-pod-annotation", "Protect nodes hosting pods with this annotation from cordon. May be specified multiple times.").PlaceHolder("KEY[=VALUE]").Strings()
+		cordonProtectedPodUsingStorageClass = app.Flag("cordon-protected-pod-using-storage-class", "Protect nodes hosting pods with pvc using a given storage class. May be specified multiple times.").Strings()
 
 		// Cordon limiter flags
 		maxSimultaneousCordon          = app.Flag("max-simultaneous-cordon", "Maximum number of cordoned nodes in the cluster.").PlaceHolder("(Value|Value%)").Strings()
@@ -184,6 +186,9 @@ func main() {
 		}
 		pf = append(pf, kubernetes.NewPodControlledByFilter(dynamic.NewForConfigOrDie(c), apiResources))
 	}
+	if protectedPodUsingStorageClass != nil && len(*protectedPodUsingStorageClass) > 0 {
+		pf = append(pf, kubernetes.NewPodUsingStorageClassFilter(cs, *protectedPodUsingStorageClass))
+	}
 	systemKnownAnnotations := []string{
 		// https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-types-of-pods-can-prevent-ca-from-removing-a-node
 		"cluster-autoscaler.kubernetes.io/safe-to-evict=false",
@@ -194,6 +199,9 @@ func main() {
 	pf_cordon := []kubernetes.PodFilterFunc{}
 	if !*cordonLocalStoragePods {
 		pf_cordon = append(pf_cordon, kubernetes.LocalStoragePodFilter)
+	}
+	if cordonProtectedPodUsingStorageClass != nil && len(*protectedPodUsingStorageClass) > 0 {
+		pf_cordon = append(pf_cordon, kubernetes.NewPodUsingStorageClassFilter(cs, *protectedPodUsingStorageClass))
 	}
 	apiResourcesCordon, err := kubernetes.GetAPIResourcesForGVK(cs, *doNotCordonPodControlledBy)
 	if err != nil {

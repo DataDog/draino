@@ -25,6 +25,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 )
 
 // A PodFilterFunc returns true if the supplied pod passes the filter.
@@ -75,6 +76,37 @@ func NewPodControlledByFilter(client dynamic.Interface, controlledByAPIResources
 			}
 			// the pod is still under control, so we protect the pod from eviction
 			return false, nil
+		}
+		return true, nil
+	}
+}
+
+// NewPodUsingStorageClassFilter returns a FilterFunc that returns false if the supplied
+// pod is using one of the given storage class
+func NewPodUsingStorageClassFilter(client kubernetes.Interface, storageClasses []string) PodFilterFunc {
+	storageClassesSet := map[string]struct{}{}
+	for _, sc := range storageClasses {
+		storageClassesSet[sc] = struct{}{}
+	}
+	return func(pod core.Pod) (bool, error) {
+		for _, v := range pod.Spec.Volumes {
+			if v.PersistentVolumeClaim == nil {
+				continue
+			}
+			pvc, err := client.CoreV1().PersistentVolumeClaims(pod.GetNamespace()).Get(v.PersistentVolumeClaim.ClaimName, meta.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			if pvc.Spec.StorageClassName == nil {
+				continue
+			}
+
+			if _, found := storageClassesSet[*pvc.Spec.StorageClassName]; found {
+				return false, nil
+			}
 		}
 		return true, nil
 	}

@@ -25,9 +25,13 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestPodFilters(t *testing.T) {
+
+	localStorageStr := "local-data"
+
 	cases := []struct {
 		name              string
 		filterBuilderFunc func(obj ...runtime.Object) PodFilterFunc
@@ -539,6 +543,93 @@ func TestPodFilters(t *testing.T) {
 				}})
 			},
 			passesFilter: false,
+		},
+		{
+			name: "StorageClass local-data but no filter",
+			pod: core.Pod{
+				ObjectMeta: meta.ObjectMeta{
+					Name: podName,
+				},
+				Spec: core.PodSpec{
+					Volumes: []core.Volume{{
+						VolumeSource: core.VolumeSource{
+							PersistentVolumeClaim: &core.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc1",
+							},
+						},
+					}},
+				},
+			},
+			objects: []runtime.Object{
+				&core.PersistentVolumeClaim{
+					ObjectMeta: meta.ObjectMeta{Name: "pvc1"},
+					Spec: core.PersistentVolumeClaimSpec{
+						StorageClassName: &localStorageStr,
+					},
+				},
+			},
+			filterBuilderFunc: func(obj ...runtime.Object) PodFilterFunc {
+				return NewPodUsingStorageClassFilter(fake.NewSimpleClientset(obj...), []string{})
+			},
+			passesFilter: true,
+		},
+		{
+			name: "StorageClass local-data with filter",
+			pod: core.Pod{
+				ObjectMeta: meta.ObjectMeta{
+					Name: podName,
+				},
+				Spec: core.PodSpec{
+					Volumes: []core.Volume{{
+						VolumeSource: core.VolumeSource{
+							PersistentVolumeClaim: &core.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc1",
+							},
+						},
+					}},
+				},
+			},
+			objects: []runtime.Object{
+				&core.PersistentVolumeClaim{
+					ObjectMeta: meta.ObjectMeta{Name: "pvc1"},
+					Spec: core.PersistentVolumeClaimSpec{
+						StorageClassName: &localStorageStr,
+					},
+				},
+			},
+			filterBuilderFunc: func(obj ...runtime.Object) PodFilterFunc {
+				return NewPodUsingStorageClassFilter(fake.NewSimpleClientset(obj...), []string{"local-data"})
+			},
+			passesFilter: false,
+		},
+		{
+			name: "StorageClass local-data with other filter",
+			pod: core.Pod{
+				ObjectMeta: meta.ObjectMeta{
+					Name: podName,
+				},
+				Spec: core.PodSpec{
+					Volumes: []core.Volume{{
+						VolumeSource: core.VolumeSource{
+							PersistentVolumeClaim: &core.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc1",
+							},
+						},
+					}},
+				},
+			},
+			objects: []runtime.Object{
+				&core.PersistentVolumeClaim{
+					ObjectMeta: meta.ObjectMeta{Name: "pvc1"},
+					Spec: core.PersistentVolumeClaimSpec{
+						StorageClassName: &localStorageStr,
+					},
+				},
+			},
+			filterBuilderFunc: func(obj ...runtime.Object) PodFilterFunc {
+				return NewPodUsingStorageClassFilter(fake.NewSimpleClientset(obj...), []string{"other-class"})
+			},
+			passesFilter: true,
 		},
 	}
 
